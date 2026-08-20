@@ -1,0 +1,16 @@
+# Configuracion para transcripcion de archivos .mov
+
+# Ruta base donde se encuentra el archivo .mov
+base_path: "/Users/carlosromero/Documents/videos"
+
+# Nombre del archivo .mov a transcribir (sin extension)
+filename: "mi_video"
+
+# Modelo de Whisper a usar: tiny, base, small, medium, large
+model: "base"
+
+# Idioma del audio (en, es, fr, etc.) o "auto" para deteccion automatica
+language: "es"
+
+# Formato de salida: txt, srt, vtt
+output_format: "txt"
