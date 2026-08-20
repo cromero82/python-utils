@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import whisper
 
-app = FastAPI(title="Python Utils API", port=8080)
+app = FastAPI(title="Python Utils API", port=5000)
 
 app.add_middleware(
     CORSMiddleware,
