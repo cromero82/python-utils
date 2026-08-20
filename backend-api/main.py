@@ -11,7 +11,7 @@ app = FastAPI(title="Python Utils API", port=5000)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:4200"],
+    allow_origins=["http://localhost:4300"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
