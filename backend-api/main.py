@@ -1,5 +1,6 @@
 import os
 import uuid
+import json
 import asyncio
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, WebSocket, WebSocketDisconnect
@@ -20,7 +21,37 @@ app.add_middleware(
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-tasks = {}
+TASKS_DIR = Path("tasks")
+TASKS_DIR.mkdir(exist_ok=True)
+
+
+def _task_path(task_id: str) -> Path:
+    return TASKS_DIR / f"{task_id}.json"
+
+
+def _save_task(task_id: str, task: dict):
+    _task_path(task_id).write_text(json.dumps(task))
+
+
+def _load_task(task_id: str) -> dict | None:
+    path = _task_path(task_id)
+    if path.exists():
+        return json.loads(path.read_text())
+    return None
+
+
+def _load_all_tasks() -> dict[str, dict]:
+    tasks = {}
+    for path in TASKS_DIR.glob("*.json"):
+        try:
+            task = json.loads(path.read_text())
+            tasks[task["id"]] = task
+        except Exception:
+            pass
+    return tasks
+
+
+tasks = _load_all_tasks()
 
 
 @app.get("/api/health")
@@ -52,7 +83,7 @@ async def start_transcription(file: UploadFile = File(...), model: str = "base",
         content = await file.read()
         f.write(content)
 
-    tasks[task_id] = {
+    task = {
         "id": task_id,
         "status": "processing",
         "progress": 0,
@@ -60,6 +91,8 @@ async def start_transcription(file: UploadFile = File(...), model: str = "base",
         "result": None,
         "error": None,
     }
+    tasks[task_id] = task
+    _save_task(task_id, task)
 
     asyncio.create_task(process_transcription(task_id, str(file_path), model, language))
 
@@ -71,8 +104,11 @@ async def process_transcription(task_id: str, file_path: str, model_name: str, l
         import whisper
 
         tasks[task_id]["progress"] = 10
+        _save_task(task_id, tasks[task_id])
+
         model = await asyncio.to_thread(whisper.load_model, model_name)
         tasks[task_id]["progress"] = 30
+        _save_task(task_id, tasks[task_id])
 
         options = {}
         if language and language != "auto":
@@ -80,16 +116,19 @@ async def process_transcription(task_id: str, file_path: str, model_name: str, l
 
         result = await asyncio.to_thread(model.transcribe, file_path, **options)
         tasks[task_id]["progress"] = 90
+        _save_task(task_id, tasks[task_id])
 
         tasks[task_id]["result"] = result["text"]
         tasks[task_id]["status"] = "completed"
         tasks[task_id]["progress"] = 100
+        _save_task(task_id, tasks[task_id])
 
         os.remove(file_path)
 
     except Exception as e:
         tasks[task_id]["status"] = "error"
         tasks[task_id]["error"] = str(e)
+        _save_task(task_id, tasks[task_id])
 
 
 @app.get("/api/transcribe/{task_id}/status")
