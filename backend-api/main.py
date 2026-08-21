@@ -5,7 +5,6 @@ from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-import whisper
 
 app = FastAPI(title="Python Utils API")
 
@@ -22,9 +21,6 @@ UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 tasks = {}
-
-MODELS_DIR = Path("models")
-MODELS_DIR.mkdir(exist_ok=True)
 
 
 @app.get("/api/health")
@@ -72,6 +68,8 @@ async def start_transcription(file: UploadFile = File(...), model: str = "base",
 
 async def process_transcription(task_id: str, file_path: str, model_name: str, language: str):
     try:
+        import whisper
+
         tasks[task_id]["progress"] = 10
         model = whisper.load_model(model_name)
         tasks[task_id]["progress"] = 30
