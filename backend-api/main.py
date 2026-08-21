@@ -71,14 +71,14 @@ async def process_transcription(task_id: str, file_path: str, model_name: str, l
         import whisper
 
         tasks[task_id]["progress"] = 10
-        model = whisper.load_model(model_name)
+        model = await asyncio.to_thread(whisper.load_model, model_name)
         tasks[task_id]["progress"] = 30
 
         options = {}
         if language and language != "auto":
             options["language"] = language
 
-        result = model.transcribe(file_path, **options)
+        result = await asyncio.to_thread(model.transcribe, file_path, **options)
         tasks[task_id]["progress"] = 90
 
         tasks[task_id]["result"] = result["text"]
