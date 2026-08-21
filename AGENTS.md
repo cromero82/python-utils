@@ -50,6 +50,7 @@ Angular (4300)  ──HTTP──>  FastAPI (5050)  ──thread──>  Whisper
 ```bash
 cd backend-api
 pip install -r requirements.txt
+python preload_model.py --model base   # evita colgar la primera transcripción
 uvicorn main:app --reload --port 5050
 ```
 
@@ -67,7 +68,7 @@ ng serve --port 4300
 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| GET | `/api/health` | Health check |
+| GET | `/api/health` | Health check (`whisper_model_cached`) |
 | GET | `/api/apps` | Lista de apps disponibles |
 | POST | `/api/transcribe` | Sube archivo y crea task. Params: `file` (form), `model`, `language` |
 | GET | `/api/transcribe/{task_id}/status` | Estado del task (progress 0-100) |
@@ -123,21 +124,18 @@ result = await asyncio.to_thread(model.transcribe, file_path, **options)
 
 **Fix (commit `2a31ce8`):** Persistir cada task a disco en `tasks/*.json`. Al iniciar, `_load_all_tasks()` carga todos los JSONs del directorio.
 
-### 5. Modelo Whisper no descargado (pendiente / parcialmente resuelto)
+### 5. Modelo Whisper: descarga colgada (resuelto)
 
-**Síntoma:** La primera vez que se usa el sistema, `whisper.load_model("base")` intenta descargar ~139MB. La descarga puede **colgarse silenciosamente** — el task queda en `status: processing, progress: 0` indefinidamente. No hay proceso de whisper corriendo (`ps aux | grep whisper` vacío), pero el task nunca avanza ni falla.
+**Síntoma:** La primera vez, `whisper.load_model("base")` descarga ~139MB. Whisper usa `urllib.request.urlopen()` **sin timeout**, así que si la red se estanca la llamada nunca retorna: el task queda en `status: processing, progress: 0` indefinidamente, sin excepción.
 
-**Lo que se intentó:**
-- `asyncio.to_thread()` para no bloquear el event loop → resuelve el bloqueo del servidor, pero no la descarga colgada
-- Persistir tasks a disco → sobrevive restarts, pero no resuelve el stuck en download
-- Ejecutar `whisper.load_model("base")` manualmente desde terminal → funciona, descarga en ~5s y queda cacheado en `~/.cache/whisper/`
-
-**Lo que falta / soluciones posibles:**
-- **Pre-descargar el modelo** en el Dockerfile o script de setup: `python -c "import whisper; whisper.load_model('base')"`
-- **Agregar timeout** a la llamada de descarga con `asyncio.wait_for()`
-- **Agregar logging** al proceso de descarga para ver si falla o se cuelga
-- **Mostrar error real** al frontend cuando la descarga falla (actualmente el exception handler en `process_transcription` captura errores, pero si la descarga se cuelga sin exception, nunca llega ahí)
-- **Validar que el modelo esté cacheado** antes de aceptar el task, y devolver error claro si no lo está
+**Fix:**
+- `socket.setdefaulttimeout(30)` alrededor de `whisper.load_model()` para que urllib no cuelgue forever
+- `asyncio.wait_for(..., timeout=180)` como red de seguridad sobre la carga del modelo
+- Logging en cada paso (cache hit/miss, load start/finish, errores)
+- Al arrancar, las tasks huérfanas en `processing` se marcan como `error` (el background task muere con reload/restart)
+- `GET /api/health` reporta `whisper_model_cached`
+- El frontend muestra `message` durante el proceso y `error` si falla
+- Script de pre-descarga: `cd backend-api && python preload_model.py --model base`
 
 ### 6. OMP Error #15 (cosmético)
 
@@ -145,17 +143,17 @@ result = await asyncio.to_thread(model.transcribe, file_path, **options)
 OMP: Error #15: Initializing libomp.dylib, but found libomp.dylib already initialized.
 ```
 
-Warning de OpenMP por múltiples copias de la librería. **No afecta funcionalidad.** Se puede silenciar con `KMP_DUPLICATE_LIB_OK=TRUE`.
+Warning de OpenMP por múltiples copias de la librería. **No afecta funcionalidad.** Se silencia con `KMP_DUPLICATE_LIB_OK=TRUE` (set en `backend-api/main.py` y `preload_model.py`).
 
 ---
 
-## Estado actual (último commit: `2a31ce8`)
+## Estado actual
 
-- Backend corriendo en `http://localhost:5050`
-- Frontend corriendo en `http://localhost:4300`
-- Modelo whisper `base` cacheado en `~/.cache/whisper/`
+- Backend en `http://localhost:5050`, frontend en `http://localhost:4300`
+- Modelo whisper `base` cacheado en `~/.cache/whisper/base.pt`
 - Tasks persistidos a disco en `tasks/*.json`
-- **Pendiente:** El task de transcripción más reciente (`1b0a3e5c`) quedó stuck en `progress: 0` porque la descarga del modelo se colgó antes de que estuviera cacheado. Ahora que el modelo ya está descargado, un nuevo upload debería funcionar.
+- Carga de modelo con timeout de red + timeout total; tasks huérfanas se marcan error al arrancar
+- Pre-descarga opcional: `cd backend-api && python preload_model.py --model base`
 
 ---
 

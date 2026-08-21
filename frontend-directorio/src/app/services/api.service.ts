@@ -16,6 +16,9 @@ export interface TaskStatus {
   filename: string;
   result: string | null;
   error: string | null;
+  message?: string;
+  model?: string;
+  language?: string;
 }
 
 @Injectable({

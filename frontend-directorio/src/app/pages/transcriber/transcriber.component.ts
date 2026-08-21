@@ -53,11 +53,17 @@ import { ApiService } from '../../services/api.service';
         <h3>Progreso</h3>
         <span class="status-badge" [ngClass]="'status-' + status">{{ status | uppercase }}</span>
       </div>
-      <p style="color: #666; margin-bottom: 8px;">{{ selectedFile?.name }}</p>
+      <p style="color: #666; margin-bottom: 8px;">{{ selectedFile?.name }} · {{ selectedModel }} · {{ selectedLanguage }}</p>
       <div class="progress-bar">
         <div class="progress-fill" [style.width.%]="progress"></div>
       </div>
       <p style="text-align: right; color: #666; font-size: 14px;">{{ progress }}%</p>
+      <p *ngIf="status === 'processing' && statusMessage" style="color: #666; margin-top: 8px; font-size: 14px;">
+        {{ statusMessage }}
+      </p>
+      <p *ngIf="status === 'error' && errorMessage" style="color: #c62828; margin-top: 8px; font-size: 14px;">
+        {{ errorMessage }}
+      </p>
     </div>
 
     <div class="card" *ngIf="transcriptionText">
@@ -73,11 +79,13 @@ import { ApiService } from '../../services/api.service';
 export class TranscriberComponent {
   selectedFile: File | null = null;
   selectedModel = 'base';
-  selectedLanguage = 'es';
+  selectedLanguage = 'en';
   isProcessing = false;
   taskId: string | null = null;
   status = '';
   progress = 0;
+  statusMessage = '';
+  errorMessage = '';
   transcriptionText = '';
   copied = false;
 
@@ -96,15 +104,20 @@ export class TranscriberComponent {
     this.isProcessing = true;
     this.transcriptionText = '';
     this.copied = false;
+    this.status = 'processing';
+    this.progress = 0;
+    this.statusMessage = '';
+    this.errorMessage = '';
 
     this.api.startTranscription(this.selectedFile, this.selectedModel, this.selectedLanguage).subscribe({
       next: (res) => {
         this.taskId = res.task_id;
         this.pollStatus();
       },
-      error: () => {
+      error: (err) => {
         this.isProcessing = false;
         this.status = 'error';
+        this.errorMessage = err?.error?.detail || err?.message || 'No se pudo iniciar la transcripción';
       },
     });
   }
@@ -117,6 +130,8 @@ export class TranscriberComponent {
         next: (res) => {
           this.status = res.status;
           this.progress = res.progress;
+          this.statusMessage = res.message || '';
+          this.errorMessage = res.error || '';
 
           if (res.status === 'completed') {
             clearInterval(interval);
@@ -126,6 +141,12 @@ export class TranscriberComponent {
             clearInterval(interval);
             this.isProcessing = false;
           }
+        },
+        error: () => {
+          clearInterval(interval);
+          this.isProcessing = false;
+          this.status = 'error';
+          this.errorMessage = 'Se perdió la conexión con el servidor o la tarea ya no existe.';
         },
       });
     }, 500);
